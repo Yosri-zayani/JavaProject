@@ -1,3 +1,5 @@
+package com.mycompany.mavenproject1;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
