@@ -1,92 +1,148 @@
-import com.opencsv.CSVReader;
-import com.opencsv.CSVWriter;
-import com.opencsv.exceptions.CsvValidationException;
-
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class DataPreprocessor {
 
-    public static void main(String[] args) {
-        String inputFilePath = "data/input.csv";
-        String outputFilePath = "data/output.csv";
-
-        try {
-            // Step 1: Read the CSV file
-            List<String[]> data = readCSV(inputFilePath);
-
-            // Step 2: Preprocess the data
-            List<String[]> preprocessedData = preprocessData(data);
-
-            // Step 3: Write the preprocessed data to a new CSV file
-            writeCSV(outputFilePath, preprocessedData);
-
-            System.out.println("Data preprocessing completed successfully!");
-
-        } catch (IOException | CsvValidationException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private static List<String[]> readCSV(String filePath) throws IOException, CsvValidationException {
-        List<String[]> data = new ArrayList<>();
-        try (CSVReader reader = new CSVReader(new FileReader(filePath))) {
-            String[] line;
-            while ((line = reader.readNext()) != null) {
-                data.add(line);
+    // Handle missing values by replacing them with a default value
+    public List<List<String>> handleMissingValues(List<List<String>> data, String defaultValue) {
+        for (List<String> row : data) {
+            for (int i = 0; i < row.size(); i++) {
+                if (row.get(i) == null || row.get(i).isEmpty()) {
+                    row.set(i, defaultValue);
+                }
             }
         }
         return data;
     }
 
-    private static List<String[]> preprocessData(List<String[]> data) {
-        List<String[]> preprocessedData = new ArrayList<>();
-
-        // Assuming the first row is the header
-        preprocessedData.add(data.get(0));
-
-        for (int i = 1; i < data.size(); i++) {
-            String[] row = data.get(i);
-
-            // Example preprocessing steps:
-            // 1. Handle missing values (replace with a default value)
-            for (int j = 0; j < row.length; j++) {
-                if (row[j] == null || row[j].isEmpty()) {
-                    row[j] = "0"; // Replace missing values with "0"
-                }
-            }
-
-            // 2. Normalize numerical data (example: divide by 100)
+    // Remove rows with outliers based on a threshold
+    public List<List<String>> removeOutliers(List<List<String>> data, int columnIndex, double threshold) {
+        data.removeIf(row -> {
             try {
-                double value = Double.parseDouble(row[1]); // Assuming the second column is numerical
-                row[1] = String.valueOf(value / 100.0);
+                double value = Double.parseDouble(row.get(columnIndex));
+                return value > threshold;
             } catch (NumberFormatException e) {
-                // Handle the case where the value is not a number
-                System.err.println("Non-numeric value found in numerical column: " + row[1]);
+                return false;
             }
-
-            // 3. Encode categorical variables (example: one-hot encoding)
-            // This is a simplified example; in practice, you'd need a more robust solution
-            if ("CategoryA".equals(row[2])) {
-                row[2] = "1,0,0";
-            } else if ("CategoryB".equals(row[2])) {
-                row[2] = "0,1,0";
-            } else if ("CategoryC".equals(row[2])) {
-                row[2] = "0,0,1";
-            }
-
-            preprocessedData.add(row);
-        }
-
-        return preprocessedData;
+        });
+        return data;
     }
 
-    private static void writeCSV(String filePath, List<String[]> data) throws IOException {
-        try (CSVWriter writer = new CSVWriter(new FileWriter(filePath))) {
-            writer.writeAll(data);
+    // Normalize numeric data in a column
+    public List<List<String>> normalizeData(List<List<String>> data, int columnIndex) {
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
+
+        // Find min and max values
+        for (List<String> row : data) {
+            try {
+                double value = Double.parseDouble(row.get(columnIndex));
+                if (value < min) min = value;
+                if (value > max) max = value;
+            } catch (NumberFormatException e) {
+                // Skip non-numeric values
+            }
         }
+
+        // Normalize values
+        for (List<String> row : data) {
+            try {
+                double value = Double.parseDouble(row.get(columnIndex));
+                double normalizedValue = (value - min) / (max - min);
+                row.set(columnIndex, String.valueOf(normalizedValue));
+            } catch (NumberFormatException e) {
+                // Skip non-numeric values
+            }
+        }
+        return data;
     }
-}
+
+    // Remove duplicate rows from the dataset
+    public List<List<String>> removeDuplicates(List<List<String>> data) {
+        Set<List<String>> uniqueRows = new HashSet<>(data);
+        return new ArrayList<>(uniqueRows);
+    }
+
+    // Encode categorical data using one-hot encoding
+    public List<List<String>> oneHotEncode(List<List<String>> data, int columnIndex) {
+        // Collect all unique categories in the column
+        Set<String> categories = data.stream()
+            .map(row -> row.get(columnIndex))
+            .collect(Collectors.toSet());
+
+        // Create a map to store the one-hot encoded values
+        Map<String, List<String>> encodingMap = new HashMap<>();
+        for (String category : categories) {
+            List<String> encodedValues = new ArrayList<>(Collections.nCopies(categories.size(), "0"));
+            int index = new ArrayList<>(categories).indexOf(category);
+            encodedValues.set(index, "1");
+            encodingMap.put(category, encodedValues);
+        }
+
+        // Replace the categorical column with one-hot encoded columns
+        List<List<String>> encodedData = new ArrayList<>();
+        for (List<String> row : data) {
+            List<String> newRow = new ArrayList<>(row);
+            String category = newRow.remove(columnIndex);
+            newRow.addAll(columnIndex, encodingMap.get(category));
+            encodedData.add(newRow);
+        }
+
+        return encodedData;
+    }
+
+    // Split data into training and testing sets
+    public Map<String, List<List<String>>> trainTestSplit(List<List<String>> data, double trainSize) {
+        int trainSizeInt = (int) (data.size() * trainSize);
+        List<List<String>> trainData = new ArrayList<>(data.subList(0, trainSizeInt));
+        List<List<String>> testData = new ArrayList<>(data.subList(trainSizeInt, data.size()));
+
+        Map<String, List<List<String>>> result = new HashMap<>();
+        result.put("train", trainData);
+        result.put("test", testData);
+
+        return result;
+    }
+
+    // Shuffle the dataset
+    public List<List<String>> shuffleData(List<List<String>> data) {
+        List<List<String>> shuffledData = new ArrayList<>(data);
+        Collections.shuffle(shuffledData);
+        return shuffledData;
+    }
+
+    // Standardize numeric data in a column (mean = 0, std = 1)
+    public List<List<String>> standardizeData(List<List<String>> data, int columnIndex) {
+        double sum = 0.0;
+        double sumSquared = 0.0;
+        int count = 0;
+
+        // Calculate mean and standard deviation
+        for (List<String> row : data) {
+            try {
+                double value = Double.parseDouble(row.get(columnIndex));
+                sum += value;
+                sumSquared += value * value;
+                count++;
+            } catch (NumberFormatException e) {
+                // Skip non-numeric values
+            }
+        }
+
+        double mean = sum / count;
+        double std = Math.sqrt((sumSquared / count) - (mean * mean));
+
+        // Standardize values
+        for (List<String> row : data) {
+            try {
+                double value = Double.parseDouble(row.get(columnIndex));
+                double standardizedValue = (value - mean) / std;
+                row.set(columnIndex, String.valueOf(standardizedValue));
+            } catch (NumberFormatException e) {
+                // Skip non-numeric values
+            }
+        }
+        return data;
+    }
+
+    }
