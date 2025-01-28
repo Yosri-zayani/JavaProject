@@ -1,71 +1,57 @@
-import com.opencsv.CSVReader;
-import com.opencsv.exceptions.CsvValidationException;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
+public class DataIngestion {
 
-public class DataImporter {
+    // Read data from a CSV file
+    public List<CSVRecord> readCSV(String filePath) throws IOException {
+        FileReader reader = new FileReader(new File(filePath));
+        CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader());
+        return csvParser.getRecords();
+    }
 
-    // Import data from a CSV file
-    public static List<String[]> importFromCSV(String filePath) throws IOException, CsvValidationException {
-        List<String[]> data = new ArrayList<>();
-        try (CSVReader reader = new CSVReader(new FileReader(filePath))) {
-            String[] line;
-            while ((line = reader.readNext()) != null) {
-                data.add(line);
+    // Read data from an Excel file
+    public List<List<String>> readExcel(String filePath) throws IOException, InvalidFormatException {
+        List<List<String>> data = new ArrayList<>();
+        Workbook workbook = new XSSFWorkbook(new File(filePath));
+        Sheet sheet = workbook.getSheetAt(0);
+        for (Row row : sheet) {
+            List<String> rowData = new ArrayList<>();
+            for (Cell cell : row) {
+                rowData.add(cell.toString());
             }
+            data.add(rowData);
         }
+        workbook.close();
         return data;
     }
 
-    // Import data from an Excel file
-    public static List<String[]> importFromExcel(String filePath) throws IOException {
-        List<String[]> data = new ArrayList<>();
-        try (FileInputStream file = new FileInputStream(filePath);
-             Workbook workbook = new XSSFWorkbook(file)) {
-            Sheet sheet = workbook.getSheetAt(0); // Assuming data is in the first sheet
-            for (Row row : sheet) {
-                List<String> rowData = new ArrayList<>();
-                for (Cell cell : row) {
-                    switch (cell.getCellType()) {
-                        case STRING:
-                            rowData.add(cell.getStringCellValue());
-                            break;
-                        case NUMERIC:
-                            rowData.add(String.valueOf(cell.getNumericCellValue()));
-                            break;
-                        default:
-                            rowData.add("");
-                    }
-                }
-                data.add(rowData.toArray(new String[0]));
-            }
-        }
-        return data;
-    }
-
-    // Import data from a database
-    public static List<String[]> importFromDatabase(String url, String username, String password, String query) throws SQLException {
-        List<String[]> data = new ArrayList<>();
-        try (Connection connection = DriverManager.getConnection(url, username, password);
+    // Read data from a database
+    public List<List<String>> readDatabase(String url, String user, String password, String query) throws Exception {
+        List<List<String>> data = new ArrayList<>();
+        try (Connection connection = DriverManager.getConnection(url, user, password);
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery(query)) {
-
-            ResultSetMetaData metaData = resultSet.getMetaData();
-            int columnCount = metaData.getColumnCount();
-
+            int columnCount = resultSet.getMetaData().getColumnCount();
             while (resultSet.next()) {
-                String[] row = new String[columnCount];
+                List<String> rowData = new ArrayList<>();
                 for (int i = 1; i <= columnCount; i++) {
-                    row[i - 1] = resultSet.getString(i);
+                    rowData.add(resultSet.getString(i));
                 }
-                data.add(row);
+                data.add(rowData);
             }
         }
         return data;
